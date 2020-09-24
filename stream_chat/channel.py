@@ -1,3 +1,5 @@
+import json
+
 from stream_chat.exceptions import StreamChannelException
 
 
@@ -14,7 +16,7 @@ class Channel(object):
     def url(self):
         if self.id is None:
             raise StreamChannelException("channel does not have an id")
-        return f"channels/{self.channel_type}/{self.id}"
+        return "channels/{}/{}".format(self.channel_type, self.id)
 
     def send_message(self, message, user_id):
         """
@@ -25,7 +27,7 @@ class Channel(object):
         :return: the Server Response
         """
         payload = {"message": add_user_id(message, user_id)}
-        return self.client.post(f"{self.url}/message", data=payload)
+        return self.client.post("{}/message".format(self.url), data=payload)
 
     def send_event(self, event, user_id):
         """
@@ -36,7 +38,7 @@ class Channel(object):
         :return: the Server Response
         """
         payload = {"event": add_user_id(event, user_id)}
-        return self.client.post(f"{self.url}/event", data=payload)
+        return self.client.post("{}/event".format(self.url), data=payload)
 
     def send_reaction(self, message_id, reaction, user_id):
         """
@@ -48,7 +50,7 @@ class Channel(object):
         :return: the Server Response
         """
         payload = {"reaction": add_user_id(reaction, user_id)}
-        return self.client.post(f"messages/{message_id}/reaction", data=payload)
+        return self.client.post("messages/{}/reaction".format(message_id), data=payload)
 
     def delete_reaction(self, message_id, reaction_type, user_id):
         """
@@ -60,7 +62,7 @@ class Channel(object):
         :return: the Server Response
         """
         return self.client.delete(
-            f"messages/{message_id}/reaction/{reaction_type}",
+            "messages/{}/reaction/{}".format(message_id, reaction_type),
             params={"user_id": user_id},
         )
 
@@ -71,7 +73,7 @@ class Channel(object):
         :param user_id: the ID of the user creating this channel
         :return:
         """
-        self.custom_data["created_by"] = dict(id=user_id)
+        self.custom_data["created_by"] = {"id": user_id}
         return self.query(watch=False, state=False, presence=False)
 
     def query(self, **options):
@@ -81,19 +83,44 @@ class Channel(object):
         :param options: the query options, check docs on https://getstream.io/chat/docs/
         :return: Returns a query response
         """
-        payload = {"state": True, "data": self.custom_data}
-        payload.update(options)
+        payload = {"state": True, "data": self.custom_data, **options}
 
-        url = f"channels/{self.channel_type}"
+        url = "channels/{}".format(self.channel_type)
         if self.id is not None:
-            url = f"{url}/{self.id}"
+            url = "{}/{}".format(url, self.id)
 
-        state = self.client.post(f"{url}/query", data=payload)
+        state = self.client.post("{}/query".format(url), data=payload)
 
         if self.id is None:
             self.id = state["channel"]["id"]
 
         return state
+
+    def query_members(self, filter_conditions, sort=None, **options):
+        """
+        Query the API for this channel to filter, sort and paginate its members efficiently.
+
+        :param filter_conditions: filters, checks docs on https://getstream.io/chat/docs/
+        :param sort: sorting field and direction slice, check docs on https://getstream.io/chat/docs/
+        :param options: pagination or members based channel searching details
+        :return: Returns members response
+
+        eg.
+        channel.query_members(filter_conditions={"name": "tommaso"},
+                              sort=[{"field": "created_at", "direction": -1}],
+                              offset=0,
+                              limit=10)
+        """
+
+        payload = {
+            "id": self.id,
+            "type": self.channel_type,
+            "filter_conditions": filter_conditions,
+            "sort": sort or [],
+            **options,
+        }
+        response = self.client.get("members", params={"payload": json.dumps(payload)})
+        return response["members"]
 
     def update(self, channel_data, update_message=None):
         """
@@ -120,7 +147,7 @@ class Channel(object):
 
         :return: The server response
         """
-        return self.client.post(f"{self.url}/truncate")
+        return self.client.post("{}/truncate".format(self.url))
 
     def add_members(self, user_ids):
         """
@@ -130,6 +157,15 @@ class Channel(object):
         :return:
         """
         return self.client.post(self.url, data={"add_members": user_ids})
+
+    def invite_members(self, user_ids):
+        """
+        invite members to the channel
+
+        :param user_ids: user IDs to invite
+        :return:
+        """
+        return self.client.post(self.url, data={"invites": user_ids})
 
     def add_moderators(self, user_ids):
         """
@@ -167,7 +203,7 @@ class Channel(object):
         :return: The server response
         """
         payload = add_user_id(data, user_id)
-        return self.client.post(f"{self.url}/read", data=payload)
+        return self.client.post("{}/read".format(self.url), data=payload)
 
     def get_replies(self, parent_id, **options):
         """
@@ -177,19 +213,21 @@ class Channel(object):
         :param options: Pagination params, ie {limit:10, idlte: 10}
         :return: A response with a list of messages
         """
-        return self.client.get(f"messages/{parent_id}/replies", params=options)
+        return self.client.get("messages/{}/replies".format(parent_id), params=options)
 
     def get_reactions(self, message_id, **options):
         """
         List the reactions, supports pagination
 
-        :param message_id: Tthe message id
+        :param message_id: The message id
         :param options: Pagination params, ie {"limit":10, "idlte": 10}
         :return: A response with a list of reactions
         """
-        return self.client.get(f"messages/{message_id}/reactions", params=options)
+        return self.client.get(
+            "messages/{}/reactions".format(message_id), params=options
+        )
 
-    def ban_user(self, user_id, **options):
+    def ban_user(self, target_id, **options):
         """
         Bans a user from this channel
 
@@ -198,38 +236,56 @@ class Channel(object):
         :return: The server response
         """
         return self.client.ban_user(
-            user_id, type=self.channel_type, id=self.id, **options
+            target_id, type=self.channel_type, id=self.id, **options
         )
 
-    def unban_user(self, user_id):
+    def unban_user(self, target_id, **options):
         """
         Removes the ban for a user on this channel
 
         :param user_id: the ID of the user to unban
         :return: The server response
         """
-        return self.client.unban_user(user_id, type=self.channel_type, id=self.id)
+        return self.client.unban_user(
+            target_id, type=self.channel_type, id=self.id, **options
+        )
 
-    def accept_invite(self, user_id):
-        raise NotImplementedError
+    def accept_invite(self, user_id, **data):
+        payload = add_user_id(data, user_id)
+        payload["accept_invite"] = True
+        response = self.client.post(self.url, data=payload)
+        self.custom_data = response["channel"]
+        return response
 
-    def reject_invite(self, user_id):
-        raise NotImplementedError
+    def reject_invite(self, user_id, **data):
+        payload = add_user_id(data, user_id)
+        payload["reject_invite"] = True
+        response = self.client.post(self.url, data=payload)
+        self.custom_data = response["channel"]
+        return response
 
-    def send_file(self):
-        raise NotImplementedError
+    def send_file(self, url, name, user, content_type=None):
+        return self.client.send_file(
+            "{}/file".format(self.url), url, name, user, content_type=content_type
+        )
 
-    def send_image(self):
-        raise NotImplementedError
+    def send_image(self, url, name, user, content_type=None):
+        return self.client.send_file(
+            "{}/image".format(self.url), url, name, user, content_type=content_type
+        )
 
-    def delete_file(self):
-        raise NotImplementedError
+    def delete_file(self, url):
+        return self.client.delete("{}/file".format(self.url), {"url": url})
 
-    def delete_image(self):
-        raise NotImplementedError
+    def delete_image(self, url):
+        return self.client.delete("{}/image".format(self.url), {"url": url})
+
+    def hide(self, user_id):
+        return self.client.post("{}/hide".format(self.url), data={"user_id": user_id})
+
+    def show(self, user_id):
+        return self.client.post("{}/show".format(self.url), data={"user_id": user_id})
 
 
 def add_user_id(payload, user_id):
-    payload = payload.copy()
-    payload.update(dict(user=dict(id=user_id)))
-    return payload
+    return {**payload, "user": {"id": user_id}}

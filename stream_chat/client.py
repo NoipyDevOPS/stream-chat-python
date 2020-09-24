@@ -1,15 +1,15 @@
-import json
-from json import JSONDecodeError
-
-import requests
-import six
-
-from stream_chat import __version__
-from stream_chat.channel import Channel
-import jwt
+from urllib.parse import urlparse
 import hmac
 import hashlib
+import json
+import urllib
+from urllib.request import Request, urlopen
 
+import jwt
+import requests
+
+from stream_chat.__pkg__ import __version__
+from stream_chat.channel import Channel
 from stream_chat.exceptions import StreamAPIException
 
 
@@ -31,19 +31,21 @@ class StreamChat(object):
         self.api_secret = api_secret
         self.timeout = timeout
         self.options = options
-        self.base_url = "https://chat-us-east-1.stream-io-api.com"
+        self.base_url = options.get(
+            "base_url", "https://chat-us-east-1.stream-io-api.com"
+        )
         self.auth_token = jwt.encode(
             {"server": True}, self.api_secret, algorithm="HS256"
         )
         self.session = requests.Session()
 
     def get_default_params(self):
-        return dict(api_key=self.api_key)
+        return {"api_key": self.api_key}
 
     def _parse_response(self, response):
         try:
             parsed_result = json.loads(response.text) if response.text else {}
-        except JSONDecodeError:
+        except ValueError:
             raise StreamAPIException(response)
         if response.status_code >= 399:
             raise StreamAPIException(response)
@@ -59,7 +61,7 @@ class StreamChat(object):
         headers["Authorization"] = self.auth_token
         headers["stream-auth-type"] = "jwt"
 
-        url = "%s/%s" % (self.base_url, relative_url)
+        url = "{}/{}".format(self.base_url, relative_url)
 
         if method.__name__ in ["post", "put", "patch"]:
             serialized = json.dumps(data)
@@ -92,10 +94,10 @@ class StreamChat(object):
         payload = {"user_id": user_id}
         if exp is not None:
             payload["exp"] = exp
-        return jwt.encode(payload, self.api_secret, algorithm="HS256")
+        return jwt.encode(payload, self.api_secret, algorithm="HS256").decode()
 
     def update_app_settings(self, **settings):
-        return self.patch("app", **settings)
+        return self.patch("app", data=settings)
 
     def get_app_settings(self):
         return self.get("app")
@@ -106,34 +108,58 @@ class StreamChat(object):
     def update_user(self, user):
         return self.update_users([user])
 
+    def update_users_partial(self, updates):
+        return self.patch("users", data={"users": updates})
+
+    def update_user_partial(self, update):
+        return self.update_users_partial([update])
+
     def delete_user(self, user_id, **options):
-        return self.delete(f"users/{user_id}", options)
+        return self.delete("users/{}".format(user_id), options)
 
     def deactivate_user(self, user_id, **options):
-        return self.post(f"users/{user_id}/deactivate", options)
+        return self.post("users/{}/deactivate".format(user_id), data=options)
+
+    def reactivate_user(self, user_id, **options):
+        return self.post("users/{}/reactivate".format(user_id), data=options)
 
     def export_user(self, user_id, **options):
-        return self.get(f"users/{user_id}/export", options)
+        return self.get("users/{}/export".format(user_id), options)
 
     def ban_user(self, target_id, **options):
-        data = dict(target_user_id=target_id)
-        data.update(options)
+        data = {"target_user_id": target_id, **options}
         return self.post("moderation/ban", data=data)
 
     def unban_user(self, target_id, **options):
-        params = dict(target_user_id=target_id)
-        params.update(options)
+        params = {"target_user_id": target_id, **options}
         return self.delete("moderation/ban", params)
 
-    def mute_user(self, target_id, user_id):
+    def flag_message(self, target_id, **options):
+        data = {"target_message_id": target_id, **options}
+        return self.post("moderation/flag", data=data)
+
+    def unflag_message(self, target_id, **options):
+        data = {"target_message_id": target_id, **options}
+        return self.post("moderation/unflag", data=data)
+
+    def flag_user(self, target_id, **options):
+        data = {"target_user_id": target_id, **options}
+        return self.post("moderation/flag", data=data)
+
+    def unflag_user(self, target_id, **options):
+        data = {"target_user_id": target_id, **options}
+        return self.post("moderation/unflag", data=data)
+
+    def mute_user(self, target_id, user_id, **options):
         """
         Create a mute
 
         :param target_id: the user getting muted
         :param user_id: the user muting the target
+        :param options: additional mute options
         :return:
         """
-        data = dict(target_id=target_id, user_id=user_id)
+        data = {"target_id": target_id, "user_id": user_id, **options}
         return self.post("moderation/mute", data=data)
 
     def unmute_user(self, target_id, user_id):
@@ -145,7 +171,7 @@ class StreamChat(object):
         :return:
         """
 
-        data = dict(target_id=target_id, user_id=user_id)
+        data = {"target_id": target_id, "user_id": user_id}
         return self.post("moderation/unmute", data=data)
 
     def mark_all_read(self, user_id):
@@ -154,10 +180,13 @@ class StreamChat(object):
     def update_message(self, message):
         if message.get("id") is None:
             raise ValueError("message must have an id")
-        return self.post(f"messages/{message['id']}", data={"message": message})
+        return self.post("messages/{}".format(message["id"]), data={"message": message})
 
-    def delete_message(self, message_id):
-        return self.delete(f"messages/{message_id}")
+    def delete_message(self, message_id, **options):
+        return self.delete("messages/{}".format(message_id), options)
+
+    def get_message(self, message_id):
+        return self.get("messages/{}".format(message_id))
 
     def query_users(self, filter_conditions, sort=None, **options):
         sort_fields = []
@@ -167,7 +196,7 @@ class StreamChat(object):
         params.update({"filter_conditions": filter_conditions, "sort": sort_fields})
         return self.get("users", params={"payload": json.dumps(params)})
 
-    def query_channels(self, filter_conditions, sort, **options):
+    def query_channels(self, filter_conditions, sort=None, **options):
         params = {"state": True, "watch": False, "presence": False}
         sort_fields = []
         if sort is not None:
@@ -182,13 +211,13 @@ class StreamChat(object):
         return self.post("channeltypes", data=data)
 
     def get_channel_type(self, channel_type):
-        return self.get(f"channeltypes/{channel_type}")
+        return self.get("channeltypes/{}".format(channel_type))
 
     def list_channel_types(self):
         return self.get("channeltypes")
 
     def update_channel_type(self, channel_type, **settings):
-        return self.put(f"channeltypes/{channel_type}", **settings)
+        return self.put("channeltypes/{}".format(channel_type), data=settings)
 
     def delete_channel_type(self, channel_type):
         """
@@ -197,7 +226,7 @@ class StreamChat(object):
         :param channel_type: the channel type
         :return:
         """
-        return self.delete(f"channeltypes/{channel_type}")
+        return self.delete("channeltypes/{}".format(channel_type))
 
     def channel(self, channel_type, channel_id=None, data=None):
         """
@@ -209,6 +238,21 @@ class StreamChat(object):
         :return: Channel
         """
         return Channel(self, channel_type, channel_id, data)
+
+    def list_commands(self):
+        return self.get("commands")
+
+    def create_command(self, data):
+        return self.post("commands", data=data)
+
+    def delete_command(self, name):
+        return self.delete("commands/{}".format(name))
+
+    def get_command(self, name):
+        return self.get("commands/{}".format(name))
+
+    def update_command(self, name, **settings):
+        return self.put("commands/{}".format(name), data=settings)
 
     def add_device(self, device_id, push_provider, user_id):
         """
@@ -252,11 +296,28 @@ class StreamChat(object):
         :return: bool
         """
         signature = hmac.new(
-            key=six.b(self.api_secret),
-            msg=six.b(request_body),
-            digestmod=hashlib.sha256,
+            key=self.api_secret.encode(), msg=request_body, digestmod=hashlib.sha256
         ).hexdigest()
         return signature == x_signature
 
     def search(self, filter_conditions, query, **options):
-        raise NotImplementedError
+        params = {**options, "filter_conditions": filter_conditions, "query": query}
+        return self.get("search", params={"payload": json.dumps(params)})
+
+    def send_file(self, uri, url, name, user, content_type=None):
+        headers = {}
+        headers["Authorization"] = self.auth_token
+        headers["stream-auth-type"] = "jwt"
+        headers["X-Stream-Client"] = get_user_agent()
+        parts = urlparse(url)
+        if parts[0] == "":
+            url = "file://" + url
+        content = urlopen(Request(url, headers={"User-Agent": "Mozilla/5.0"})).read()
+        response = requests.post(
+            "{}/{}".format(self.base_url, uri),
+            params=self.get_default_params(),
+            data={"user": json.dumps(user)},
+            files={"file": (name, content, content_type)},
+            headers=headers,
+        )
+        return self._parse_response(response)

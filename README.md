@@ -1,18 +1,14 @@
-# stream-chat-python 
+# stream-chat-python
 
-[![Build Status](https://travis-ci.com/GetStream/stream-chat-python.svg?token=WystDPP9vxKnwsd8NwW1&branch=master)](https://travis-ci.com/GetStream/stream-chat-python) [![codecov](https://codecov.io/gh/GetStream/stream-chat-python/branch/master/graph/badge.svg?token=DM7rr9M7Kl)](https://codecov.io/gh/GetStream/stream-chat-python) [![PyPI version](https://badge.fury.io/py/stream-chat.svg)](http://badge.fury.io/py/stream-chat)
+[![Build Status](https://travis-ci.com/GetStream/stream-chat-python.svg?token=WystDPP9vxKnwsd8NwW1&branch=master)](https://travis-ci.com/GetStream/stream-chat-python) [![codecov](https://codecov.io/gh/GetStream/stream-chat-python/branch/master/graph/badge.svg?token=DM7rr9M7Kl)](https://codecov.io/gh/GetStream/stream-chat-python) [![PyPI version](https://badge.fury.io/py/stream-chat.svg)](http://badge.fury.io/py/stream-chat) ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/stream-chat.svg)
 
-stream-chat-python is the official Python client for [Stream chat](https://getstream.io/chat/) a service for building chat applications.
+the official Python API client for [Stream chat](https://getstream.io/chat/) a service for building chat applications.
 
 You can sign up for a Stream account at https://getstream.io/chat/get_started/.
 
+You can use this library to access chat API endpoints server-side, for the client-side integrations (web and mobile) have a look at the Javascript, iOS and Android SDK libraries (https://getstream.io/chat/).
+
 ### Installation
-
-stream-python supports:
-
-- Python (3.4, 3.5, 3.6, 3.7)
-
-#### Install from Pypi
 
 ```bash
 pip install stream-chat
@@ -20,21 +16,21 @@ pip install stream-chat
 
 ### Documentation
 
-[Official API docs](https://getstream.io/chat/docs/)  
+[Official API docs](https://getstream.io/chat/docs/)
 
 ### How to build a chat app with Python tutorial
 
-TODO: add a sample Python chat program
+[Chat with Python, Django and React](https://github.com/GetStream/python-chat-example)
 
 ### Supported features
 
-- Chat channels 
+- Chat channels
 - Messages
-- Chat channel types 
-- User management 
-- Moderation API 
-- Push configuration 
-- User devices 
+- Chat channel types
+- User management
+- Moderation API
+- Push configuration
+- User devices
 - User search
 - Channel search
 
@@ -51,7 +47,7 @@ channel = chat.channel("messaging", "kung-fu")
 channel.create("chuck")
 
 # add a first message to the channel
-channel.send_message({"text": "AMA about kung-fu"})
+channel.send_message({"text": "AMA about kung-fu"}, "chuck")
 
 ```
 
@@ -81,6 +77,6 @@ In order to release new version you need to be a maintainer on Pypi.
 - Commit and push to Github
 - Create a new tag for the version (eg. `v2.9.0`)
 - Create a new dist with python `python setup.py sdist`
-- Upload the new distributable with wine `twine upload dist/stream-chat-VERSION-NAME.tar.gz`
+- Upload the new distributable with twine `twine upload dist/stream-chat-VERSION-NAME.tar.gz`
 
 If unsure you can also test using the Pypi test servers `twine upload --repository-url https://test.pypi.org/legacy/ dist/stream-chat-VERSION-NAME.tar.gz`

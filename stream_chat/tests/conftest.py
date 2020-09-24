@@ -19,17 +19,33 @@ def pytest_runtest_setup(item):
             pytest.xfail("previous test failed (%s)" % previousfailed.name)
 
 
+def pytest_configure(config):
+    config.addinivalue_line("markers", "incremental: mark test incremental")
+
+
 @pytest.fixture(scope="module")
 def client():
+    base_url = os.environ.get("STREAM_HOST")
+    options = {"base_url": base_url} if base_url else {}
     return StreamChat(
         api_key=os.environ["STREAM_KEY"],
         api_secret=os.environ["STREAM_SECRET"],
         timeout=10,
+        **options,
     )
 
 
 @pytest.fixture(scope="function")
 def random_user(client):
+    user = {"id": str(uuid.uuid4())}
+    response = client.update_user(user)
+    assert "users" in response
+    assert user["id"] in response["users"]
+    return user
+
+
+@pytest.fixture(scope="function")
+def server_user(client):
     user = {"id": str(uuid.uuid4())}
     response = client.update_user(user)
     assert "users" in response
@@ -48,10 +64,19 @@ def random_users(client):
 @pytest.fixture(scope="function")
 def channel(client, random_user):
     channel = client.channel(
-        "messaging", f"{uuid.uuid4()}", {"test": True, "language": "python"}
+        "messaging", str(uuid.uuid4()), {"test": True, "language": "python"}
     )
     channel.create(random_user["id"])
     return channel
+
+
+@pytest.fixture(scope="function")
+def command(client):
+    response = client.create_command(
+        dict(name=str(uuid.uuid4()), description="My command")
+    )
+
+    return response["command"]
 
 
 @pytest.fixture(scope="module")
